@@ -109,7 +109,34 @@ function generatePlan(user) {
     const startLongRun = currentLongRun;
     const totalDistDiff = goalLongRun - startLongRun;
 
-    while (!reachedGoal && weekCount <= maxWeeks) {
+    // --- Determine Plan Duration ---
+    // 1. Weeks needed for Distance (Logarithmic 5% growth)
+    let weeksForDist = 0;
+    if (totalDistDiff > 0) {
+        // formula: start * (1.05)^weeks = goal => weeks = log(goal/start) / log(1.05)
+        weeksForDist = Math.ceil(
+            Math.log(goalLongRun / startLongRun) / Math.log(1.05)
+        );
+    }
+
+    // 2. Weeks needed for Pace (Linear improvement of ~5-10 sec/km per week)
+    // 40min -> 30min 5k is 8:00 -> 6:00 pace. Diff = 120s.
+    // At 10s/week = 12 weeks. At 5s/week = 24 weeks.
+    // Let's use 10s/week as a reasonable aggressive baseline for "Training".
+    let weeksForPace = 0;
+    if (targetPaceDec < currentPaceDec) {
+        const paceDiffSeconds = (currentPaceDec - targetPaceDec) * 60;
+        weeksForPace = Math.ceil(paceDiffSeconds / 10);
+    }
+
+    // 3. Take the max, but clamp to reasonable bounds
+    let planDuration = Math.max(weeksForDist, weeksForPace);
+    // Minimum 4 weeks for any plan to be meaningful
+    if (planDuration < 4) planDuration = 4;
+    // Maximum cap
+    if (planDuration > maxWeeks) planDuration = maxWeeks;
+
+    while (weekCount <= planDuration) {
         const isRecoveryWeek = weekCount % 4 === 0;
         const isTaperWeek = false;
 
@@ -122,10 +149,11 @@ function generatePlan(user) {
         }
 
         // Calculate Dynamic Tempo Pace
-        // Progress Ratio based on distance volume
+        // Progress Ratio based on TIME (Week Progression)
+        // This ensures pace improves even if distance is flat.
         let progressRatio = 0;
-        if (totalDistDiff > 0) {
-            progressRatio = (currentLongRun - startLongRun) / totalDistDiff;
+        if (planDuration > 1) {
+            progressRatio = (weekCount - 1) / (planDuration - 1);
         }
         if (progressRatio > 1) progressRatio = 1;
 
