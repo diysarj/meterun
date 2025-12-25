@@ -21,7 +21,7 @@ Meterun is a dynamic, web-based running plan generator designed to help runners 
 
 ## How to Use
 
-1. **Open the Application**: Simply open `https://diysarj.github.io/meterun/` in any modern web browser.
+1. **Open the Application**: Simply open https://diysarj.github.io/meterun/ in any modern web browser.
 2. **Onboarding**:
     - **Choose Goal**: Select your target distance (5K, 10K, or 15K).
     - **Experience Level**: Choose between Beginner or Intermediate.
