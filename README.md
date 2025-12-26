@@ -36,7 +36,7 @@ Meterun is a dynamic, web-based running plan generator designed to help runners 
 
 ## Technologies
 
--   **HTML5**: Semantic structure for accessibility and SEO.
+-   **HTML5**: Semantic structure.
 -   **CSS3**: Custom vanilla CSS for styling.
 -   **JavaScript**: Core logic for plan generation, state management, and DOM manipulation (no external frameworks required).
 -   **LocalStorage API**: Used for saving user sessions client-side.
