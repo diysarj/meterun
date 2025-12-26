@@ -27,9 +27,6 @@ const display = {
     btnConfirm: document.getElementById("confirm-reset"),
 };
 
-// Plan Templates (Duration only) - REMOVED
-// Dynamic calculation is used instead.
-
 // Initialization
 document.addEventListener("DOMContentLoaded", () => {
     loadState();
@@ -110,19 +107,15 @@ function generatePlan(user) {
     const totalDistDiff = goalLongRun - startLongRun;
 
     // --- Determine Plan Duration ---
-    // 1. Weeks needed for Distance (Logarithmic 5% growth)
+    // 1. Weeks needed for Distance (5% growth)
     let weeksForDist = 0;
     if (totalDistDiff > 0) {
-        // formula: start * (1.05)^weeks = goal => weeks = log(goal/start) / log(1.05)
         weeksForDist = Math.ceil(
             Math.log(goalLongRun / startLongRun) / Math.log(1.05)
         );
     }
 
     // 2. Weeks needed for Pace (Linear improvement of ~5-10 sec/km per week)
-    // 40min -> 30min 5k is 8:00 -> 6:00 pace. Diff = 120s.
-    // At 10s/week = 12 weeks. At 5s/week = 24 weeks.
-    // Let's use 10s/week as a reasonable aggressive baseline for "Training".
     let weeksForPace = 0;
     if (targetPaceDec < currentPaceDec) {
         const paceDiffSeconds = (currentPaceDec - targetPaceDec) * 60;
@@ -149,16 +142,12 @@ function generatePlan(user) {
         }
 
         // Calculate Dynamic Tempo Pace
-        // Progress Ratio based on TIME (Week Progression)
-        // This ensures pace improves even if distance is flat.
         let progressRatio = 0;
         if (planDuration > 1) {
             progressRatio = (weekCount - 1) / (planDuration - 1);
         }
         if (progressRatio > 1) progressRatio = 1;
 
-        // Linear interpolation: Start at Current Pace -> End at Target Pace
-        // Note: Paces are time/km, so "Start" is higher number (slower) than "End".
         const currentTempoDec =
             currentPaceDec + (targetPaceDec - currentPaceDec) * progressRatio;
         const tempoPaceStr = formatPace(currentTempoDec);
@@ -247,21 +236,14 @@ function generatePlan(user) {
 
         // --- Progression Logic for NEXT week ---
         if (!isRecoveryWeek) {
-            // Only increase if it wasn't a recovery week
-            // 5% increase rule (User Requested)
             const nextDist = currentLongRun * 1.05;
 
-            // Check if we reached goal
             if (currentLongRun >= goalLongRun) {
                 reachedGoal = true;
             } else {
                 currentLongRun = nextDist;
             }
         } else {
-            // After recovery, start back at the distance we were at BEFORE recovery + a bit?
-            // Or just continue progressive overload from the non-reduced base.
-            // Simplified: currentLongRun stays at the "peak" level during recovery calculation,
-            // so we just increase it for the next block.
             currentLongRun = currentLongRun * 1.05;
         }
 
@@ -269,7 +251,6 @@ function generatePlan(user) {
     }
 
     // 4. Add Taper Week (Final Week)
-    // The loop finishes when we hit volume, but we need a final week to rest before "Race Day"
     const taperWeek = {
         id: weekCount,
         days: [],
@@ -516,7 +497,6 @@ function resetApp() {
 function toggleModal(show) {
     if (show) {
         display.modal.classList.remove("hidden");
-        // Small delay to allow display:block to apply before opacity transition
         setTimeout(() => display.modal.classList.add("active"), 10);
     } else {
         display.modal.classList.remove("active");
