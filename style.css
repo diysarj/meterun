@@ -178,8 +178,8 @@ body {
     width: 32px;
     height: 32px;
     background-color: var(--accent-primary);
-    -webkit-mask-image: url('assets/shoe_icon_final.png');
-    mask-image: url('assets/shoe_icon_final.png');
+    -webkit-mask-image: url('images/shoe_icon_final.png');
+    mask-image: url('images/shoe_icon_final.png');
     -webkit-mask-size: contain;
     mask-size: contain;
     -webkit-mask-repeat: no-repeat;
