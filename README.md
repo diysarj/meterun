@@ -1,6 +1,6 @@
 # Meterun - Running Plans
 
-Meterun is a dynamic, web-based running plan generator designed to help runners achieve their distance goals through personalized training schedules. Whether you're aiming for your first 5K or training for a faster 15K, Meterun adapts to your current fitness level.
+Meterun is a dynamic, web-based running plan generator Whether you're aiming for your first 5K or training for a faster 15K, Meterun adapts to your current fitness level.
 
 ## Features
 
