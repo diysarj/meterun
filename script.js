@@ -80,11 +80,11 @@ function generatePlan(user) {
     let safeRecentDist = user.recentDist || 2;
     if (safeRecentDist < 1) safeRecentDist = 1;
 
-    // Start 20% higher than recent to build confidence, but not insanely high
-    let currentLongRun = Math.max(safeRecentDist * 1.2, 2);
+    // Start at recent distance
+    let currentLongRun = Math.max(safeRecentDist, 2);
 
-    // End 10% higher than goal (over-distance training)
-    const goalLongRun = targetDistKm * 1.1;
+    // Long run goal = target distance (not exceeding race distance)
+    const goalLongRun = targetDistKm;
 
     // 2. Pace Logic
     const currentPaceDec = user.recentTime / safeRecentDist; // min/km
@@ -95,6 +95,12 @@ function generatePlan(user) {
         long: formatPace(currentPaceDec * 1.3), // 30% slower
         // Tempo is now dynamic
     };
+
+    // Experience Level Adjustments
+    const isIntermediate = user.level === "intermediate";
+    const levelPaceImprovement = isIntermediate ? 10 : 12; // sec/km per week
+    const levelDurationMultiplier = isIntermediate ? 1.0 : 1.5; // Beginners need more time
+    const levelRecoveryFrequency = isIntermediate ? 4 : 3; // Recovery every N weeks
 
     // 3. Dynamic Schedule Generation
     const schedule = [];
@@ -107,30 +113,32 @@ function generatePlan(user) {
     const totalDistDiff = goalLongRun - startLongRun;
 
     // --- Determine Plan Duration ---
-    // 1. Weeks needed for Distance (5% growth)
+    // 1. Weeks needed for Distance (10% weekly growth)
     let weeksForDist = 0;
     if (totalDistDiff > 0) {
         weeksForDist = Math.ceil(
-            Math.log(goalLongRun / startLongRun) / Math.log(1.05)
+            Math.log(goalLongRun / startLongRun) / Math.log(1.1)
         );
     }
 
-    // 2. Weeks needed for Pace (Linear improvement of ~5-10 sec/km per week)
+    // 2. Weeks needed for Pace (Experience-based improvement rate)
     let weeksForPace = 0;
     if (targetPaceDec < currentPaceDec) {
         const paceDiffSeconds = (currentPaceDec - targetPaceDec) * 60;
-        weeksForPace = Math.ceil(paceDiffSeconds / 10);
+        weeksForPace = Math.ceil(paceDiffSeconds / levelPaceImprovement);
     }
 
     // 3. Take the max, but clamp to reasonable bounds
     let planDuration = Math.max(weeksForDist, weeksForPace);
+    // Apply experience level multiplier for beginners
+    planDuration = Math.ceil(planDuration * levelDurationMultiplier);
     // Minimum 4 weeks for any plan to be meaningful
     if (planDuration < 4) planDuration = 4;
     // Maximum cap
     if (planDuration > maxWeeks) planDuration = maxWeeks;
 
     while (weekCount <= planDuration) {
-        const isRecoveryWeek = weekCount % 4 === 0;
+        const isRecoveryWeek = weekCount % levelRecoveryFrequency === 0;
         const isTaperWeek = false;
 
         // Calculate Long Run Distance for this week
@@ -152,8 +160,10 @@ function generatePlan(user) {
             currentPaceDec + (targetPaceDec - currentPaceDec) * progressRatio;
         const tempoPaceStr = formatPace(currentTempoDec);
 
-        // Short runs are ~50% of long run
-        const shortRunDist = longRunDist * 0.5;
+        // Easy runs: 60% of long run (higher volume)
+        const easyRunDist = longRunDist * 0.6;
+        // Tempo runs: 40% of long run (shorter, more intense)
+        const tempoRunDist = longRunDist * 0.4;
 
         // Build Week Object
         const week = {
@@ -162,7 +172,8 @@ function generatePlan(user) {
         };
 
         const longRunStr = longRunDist.toFixed(1);
-        const shortRunStr = shortRunDist.toFixed(1);
+        const easyRunStr = easyRunDist.toFixed(1);
+        const tempoRunStr = tempoRunDist.toFixed(1);
 
         // --- Weekly Pattern ---
 
@@ -170,7 +181,7 @@ function generatePlan(user) {
         week.days.push({
             day: "Monday",
             type: "run",
-            title: `Easy Run ${shortRunStr}km`,
+            title: `Easy Run ${easyRunStr}km`,
             desc: `Pace: ${paces.easy}/km. Relaxed effort.`,
         });
 
@@ -188,19 +199,19 @@ function generatePlan(user) {
             week.days.push({
                 day: "Wednesday",
                 type: "run",
-                title: `Easy Run ${shortRunStr}km`,
+                title: `Easy Run ${easyRunStr}km`,
                 desc: `Pace: ${paces.easy}/km. Active recovery.`,
             });
         } else {
             week.days.push({
                 day: "Wednesday",
                 type: "run",
-                title: `Tempo Run ${shortRunStr}km`,
+                title: `Tempo Run ${tempoRunStr}km`,
                 desc: `Pace: ${tempoPaceStr}/km. Training Pace.`,
             });
         }
 
-        // Day 4: Strength (Legs)
+        // Day 4: Leg Strength (both levels need strength foundation)
         week.days.push({
             day: "Thursday",
             type: "strength",
@@ -208,13 +219,24 @@ function generatePlan(user) {
             desc: "Squats, Lunges, Calf Raises.",
         });
 
-        // Day 5: Rest
-        week.days.push({
-            day: "Friday",
-            type: "rest",
-            title: "Rest & Recovery",
-            desc: "Stretch, foam roll, or light walk.",
-        });
+        // Day 5: Experience-based recovery
+        if (isIntermediate) {
+            // Intermediates: 4th run of the week
+            week.days.push({
+                day: "Friday",
+                type: "run",
+                title: `Easy Run ${easyRunStr}km`,
+                desc: `Pace: ${paces.easy}/km. Recovery run.`,
+            });
+        } else {
+            // Beginners: Extra rest day
+            week.days.push({
+                day: "Friday",
+                type: "rest",
+                title: "Rest & Recovery",
+                desc: "Stretch, foam roll, or light walk.",
+            });
+        }
 
         // Day 6: Long Run
         week.days.push({
@@ -235,8 +257,9 @@ function generatePlan(user) {
         schedule.push(week);
 
         // --- Progression Logic for NEXT week ---
+        // 10% weekly increase
         if (!isRecoveryWeek) {
-            const nextDist = currentLongRun * 1.05;
+            const nextDist = currentLongRun * 1.1;
 
             if (currentLongRun >= goalLongRun) {
                 reachedGoal = true;
@@ -244,7 +267,7 @@ function generatePlan(user) {
                 currentLongRun = nextDist;
             }
         } else {
-            currentLongRun = currentLongRun * 1.05;
+            currentLongRun = currentLongRun * 1.1;
         }
 
         weekCount++;
