@@ -25,5 +25,5 @@ Meterun is a smart running companion app designed to help you generate personali
 
 -   Node.js & Express.js
 -   MongoDB & Mongoose
--   Google OAuth & Calendar API
+-   Google OAuth for Strava & Google Calendar API
 -   JWT Authentication
