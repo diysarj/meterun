@@ -1,4 +1,11 @@
 {
+    "buildCommand": "npm run vercel-build",
+    "outputDirectory": "client/dist",
+    "functions": {
+        "api/**/*.js": {
+            "maxDuration": 30
+        }
+    },
     "rewrites": [
         {
             "source": "/api/(.*)",
