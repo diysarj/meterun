@@ -47,7 +47,7 @@ export default function RouteVisualization() {
     const [currentActivityIndex, setCurrentActivityIndex] = useState(0);
     const [isSyncing, setIsSyncing] = useState(false);
     const [routePath, setRoutePath] = useState([]);
-    const [center, setCenter] = useState([51.505, -0.09]);
+    const [center, setCenter] = useState([-6.2088, 106.8456]);
 
     const currentActivity = activities[currentActivityIndex] || null;
 
