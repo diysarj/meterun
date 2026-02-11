@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
     Activity,
@@ -16,7 +17,24 @@ import {
 } from "lucide-react";
 import googleCalendarIcon from "../../assets/google-calendar-icon.png";
 
+const fetchPlans = async () => {
+    const res = await fetch("/api/plans", { credentials: "include" });
+    if (res.status === 401) throw new Error("unauthorized");
+    if (!res.ok) throw new Error("Failed to fetch plans");
+    return res.json();
+};
+
+const fetchSyncStatus = async () => {
+    const res = await fetch("/api/auth/sync-status", {
+        credentials: "include",
+    });
+    if (!res.ok) return { google: "disconnected" };
+    return res.json();
+};
+
 export default function TrainingPlan() {
+    const queryClient = useQueryClient();
+
     const [formData, setFormData] = useState({
         level: "beginner",
         distance: "5k",
@@ -26,216 +44,155 @@ export default function TrainingPlan() {
         recentTime: "00:30:00",
         targetTime: "00:25:00",
     });
-    const [planId, setPlanId] = useState(null);
-    const [generatedPlan, setGeneratedPlan] = useState(null);
     const [error, setError] = useState(null);
     const [expandedWeek, setExpandedWeek] = useState(null);
-    const [completedWorkouts, setCompletedWorkouts] = useState({});
-    const [googleStatus, setGoogleStatus] = useState("loading");
-    const [syncing, setSyncing] = useState(false);
     const [syncMessage, setSyncMessage] = useState(null);
     const [showResetModal, setShowResetModal] = useState(false);
 
-    // Load plan from server on mount (server is source of truth for authenticated users)
-    useEffect(() => {
-        const loadPlan = async () => {
-            // API load FIRST - server is the source of truth for authenticated users
-            try {
-                const res = await fetch("/api/plans", {
-                    credentials: "include",
-                });
+    // --- Queries ---
+    const { data: plans } = useQuery({
+        queryKey: ["plans"],
+        queryFn: fetchPlans,
+    });
 
-                if (res.status === 401) {
-                    // User is not authenticated - clear any localStorage data
-                    // to prevent showing another user's plan
-                    localStorage.removeItem("meterun_training_plan");
-                    localStorage.removeItem("meterun_plan_progress");
-                    setGeneratedPlan(null);
-                    setCompletedWorkouts({});
-                    setPlanId(null);
-                    setError("Please sign in to view your saved plan.");
-                    return;
-                }
+    const { data: syncStatusData } = useQuery({
+        queryKey: ["sync-status"],
+        queryFn: fetchSyncStatus,
+    });
 
-                if (res.ok) {
-                    const plans = await res.json();
-                    if (plans.length > 0) {
-                        const serverPlan = plans[0];
-                        setPlanId(serverPlan._id); // Store ID
-                        const schedule = serverPlan.schedule;
-                        setGeneratedPlan(schedule);
-                        setError(null); // Clear any auth errors
+    const googleStatus = syncStatusData?.google ?? "loading";
 
-                        // Build completed map from server
-                        const completedMap = {};
-                        schedule.forEach((week) => {
-                            week.workouts.forEach((workout, i) => {
-                                if (workout.completed) {
-                                    completedMap[
-                                        `${week.weekNumber}-${i}`
-                                    ] = true;
-                                }
-                            });
-                        });
-                        setCompletedWorkouts(completedMap);
-
-                        // Update form data from server plan
-                        setFormData((prev) => ({
-                            ...prev,
-                            distance: serverPlan.targetRace || prev.distance,
-                            level: serverPlan.level || prev.level,
-                            raceDate: serverPlan.targetDate
-                                ? new Date(serverPlan.targetDate)
-                                      .toISOString()
-                                      .split("T")[0]
-                                : prev.raceDate,
-                        }));
-
-                        // Update LS
-                        localStorage.setItem(
-                            "meterun_training_plan",
-                            JSON.stringify(schedule)
-                        );
-                        localStorage.setItem(
-                            "meterun_plan_progress",
-                            JSON.stringify(completedMap)
-                        );
-                    } else {
-                        // User is authenticated but has no plans on the server
-                        // This means they're a new user or reset their plan
-                        // Clear any localStorage data that might be from a different user
-                        console.log(
-                            "Authenticated user has no plans. Clearing local storage."
-                        );
-                        localStorage.removeItem("meterun_training_plan");
-                        localStorage.removeItem("meterun_plan_progress");
-                        setGeneratedPlan(null);
-                        setCompletedWorkouts({});
-                        setPlanId(null);
-                    }
-                }
-            } catch (error) {
-                console.error("Failed to fetch plan", error);
-            }
-        };
-        loadPlan();
-    }, []);
-
-    // Fetch Google sync status on mount
-    useEffect(() => {
-        const fetchSyncStatus = async () => {
-            try {
-                const res = await fetch("/api/auth/sync-status", {
-                    credentials: "include",
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setGoogleStatus(data.google);
-                } else {
-                    setGoogleStatus("disconnected");
-                }
-            } catch (error) {
-                console.error("Failed to fetch sync status:", error);
-                setGoogleStatus("disconnected");
-            }
-        };
-
-        fetchSyncStatus();
-    }, []);
-
-    // Save progress whenever it changes
-    useEffect(() => {
-        if (Object.keys(completedWorkouts).length > 0) {
-            localStorage.setItem(
-                "meterun_plan_progress",
-                JSON.stringify(completedWorkouts)
-            );
+    // Derive plan data from query result
+    const {
+        generatedPlan,
+        planId,
+        completedWorkouts: serverCompletedMap,
+    } = useMemo(() => {
+        if (!plans || plans.length === 0) {
+            return { generatedPlan: null, planId: null, completedWorkouts: {} };
         }
-    }, [completedWorkouts]);
+        const serverPlan = plans[0];
+        const schedule = serverPlan.schedule;
+        const completedMap = {};
+        schedule.forEach((week) => {
+            week.workouts.forEach((workout, i) => {
+                if (workout.completed) {
+                    completedMap[`${week.weekNumber}-${i}`] = true;
+                }
+            });
+        });
+        return {
+            generatedPlan: schedule,
+            planId: serverPlan._id,
+            completedWorkouts: completedMap,
+        };
+    }, [plans]);
 
-    const handleGenerate = async () => {
-        try {
-            setError(null);
-            if (!formData.raceDate) {
-                setError("Please select a race date.");
-                return;
-            }
+    // Local optimistic state for completed workouts (overrides server state)
+    const [optimisticOverrides, setOptimisticOverrides] = useState({});
+    const completedWorkouts = { ...serverCompletedMap, ...optimisticOverrides };
 
+    // Update form data when plan data is available
+    useMemo(() => {
+        if (plans && plans.length > 0) {
+            const serverPlan = plans[0];
+            setFormData((prev) => ({
+                ...prev,
+                distance: serverPlan.targetRace || prev.distance,
+                level: serverPlan.level || prev.level,
+                raceDate: serverPlan.targetDate
+                    ? new Date(serverPlan.targetDate)
+                          .toISOString()
+                          .split("T")[0]
+                    : prev.raceDate,
+            }));
+        }
+    }, [plans]);
+
+    // --- Mutations ---
+    const generateMutation = useMutation({
+        mutationFn: async (data) => {
             const res = await fetch("/api/plans", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({
-                    distance: formData.distance,
-                    raceDate: formData.raceDate,
-                    level: formData.level,
-                    currentDistance: formData.currentDistance,
-                    recentTime: formData.recentTime,
-                    targetTime: formData.targetTime,
-                }),
+                body: JSON.stringify(data),
             });
-
-            const data = await res.json();
-
+            const result = await res.json();
             if (!res.ok)
-                throw new Error(data.message || "Failed to generate plan");
-
-            // Backend returns the plan object, schedule is in plan.schedule
-            if (data && data.schedule) {
-                setGeneratedPlan(data.schedule);
-                setPlanId(data._id); // Store ID from new plan
-                setExpandedWeek(1);
-                setCompletedWorkouts({});
-                // We can still use valid localStorage as cache or just rely on API
-                localStorage.setItem(
-                    "meterun_training_plan",
-                    JSON.stringify(data.schedule)
-                );
-                localStorage.removeItem("meterun_plan_progress");
-            } else {
-                console.warn(
-                    "Received invalid plan data from server (missing schedule)",
-                    data
-                );
-                // Try to recover if we have a plan object but maybe structure is different?
-                // But for now, throw error so UI stays clean
+                throw new Error(result.message || "Failed to generate plan");
+            if (!result.schedule)
                 throw new Error("Invalid plan data received from server");
+            return result;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["plans"] });
+            setExpandedWeek(1);
+            setOptimisticOverrides({});
+            setError(null);
+        },
+        onError: (err) => setError(err.message),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: async (id) => {
+            const res = await fetch(`/api/plans/${id}`, {
+                method: "DELETE",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.message || "Failed to delete plan");
             }
-        } catch (err) {
-            setError(err.message);
-        }
-    };
-
-    const handleReset = () => {
-        setShowResetModal(true);
-    };
-
-    const confirmReset = async () => {
-        try {
-            // Delete plan from server if we have a planId
-            if (planId) {
-                const res = await fetch(`/api/plans/${planId}`, {
-                    method: "DELETE",
-                    credentials: "include",
-                });
-
-                if (!res.ok) {
-                    const data = await res.json();
-                    throw new Error(data.message || "Failed to delete plan");
-                }
-            }
-
-            // Clear local state
-            setGeneratedPlan(null);
-            setCompletedWorkouts({});
-            setPlanId(null);
-            setFormData({ ...formData, raceDate: "" });
-            localStorage.removeItem("meterun_training_plan");
-            localStorage.removeItem("meterun_plan_progress");
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["plans"] });
+            setOptimisticOverrides({});
+            setFormData((prev) => ({ ...prev, raceDate: "" }));
             setShowResetModal(false);
-        } catch (err) {
-            console.error("Failed to reset plan:", err);
+        },
+        onError: (err) => {
             setError(err.message);
+            setShowResetModal(false);
+        },
+    });
+
+    const toggleMutation = useMutation({
+        mutationFn: async ({ planId, weekNumber, dayIndex, completed }) => {
+            await fetch(`/api/plans/${planId}/workout`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ weekNumber, dayIndex, completed }),
+            });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["plans"] });
+        },
+    });
+
+    const handleGenerate = async () => {
+        setError(null);
+        if (!formData.raceDate) {
+            setError("Please select a race date.");
+            return;
+        }
+        generateMutation.mutate({
+            distance: formData.distance,
+            raceDate: formData.raceDate,
+            level: formData.level,
+            currentDistance: formData.currentDistance,
+            recentTime: formData.recentTime,
+            targetTime: formData.targetTime,
+        });
+    };
+
+    const handleReset = () => setShowResetModal(true);
+
+    const confirmReset = () => {
+        if (planId) {
+            deleteMutation.mutate(planId);
+        } else {
             setShowResetModal(false);
         }
     };
@@ -244,36 +201,26 @@ export default function TrainingPlan() {
         setExpandedWeek(expandedWeek === weekNum ? null : weekNum);
     };
 
-    const toggleWorkout = async (weekNum, dayIndex) => {
+    const toggleWorkout = (weekNum, dayIndex) => {
         const key = `${weekNum}-${dayIndex}`;
         const newStatus = !completedWorkouts[key];
 
         // Optimistic update
-        setCompletedWorkouts((prev) => ({
-            ...prev,
-            [key]: newStatus,
-        }));
+        setOptimisticOverrides((prev) => ({ ...prev, [key]: newStatus }));
 
         if (planId) {
-            try {
-                await fetch(`/api/plans/${planId}/workout`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({
-                        weekNumber: weekNum,
-                        dayIndex: dayIndex,
-                        completed: newStatus,
-                    }),
-                });
-            } catch (err) {
-                console.error("Failed to sync workout status", err);
-                // Revert on error?
-                setCompletedWorkouts((prev) => ({
-                    ...prev,
-                    [key]: !newStatus,
-                }));
-            }
+            toggleMutation.mutate(
+                { planId, weekNumber: weekNum, dayIndex, completed: newStatus },
+                {
+                    onError: () => {
+                        // Revert on error
+                        setOptimisticOverrides((prev) => ({
+                            ...prev,
+                            [key]: !newStatus,
+                        }));
+                    },
+                },
+            );
         }
     };
 
@@ -287,44 +234,23 @@ export default function TrainingPlan() {
             return;
         }
 
-        setSyncing(true);
         setSyncMessage(null);
 
         try {
-            // Get the plan ID from the API (we need to fetch user's plans first)
-            const plansRes = await fetch("/api/plans", {
-                credentials: "include",
-            });
-
-            if (plansRes.status === 401) {
-                throw new Error(
-                    "Session expired. Please sign out and sign back in."
-                );
-            }
-
-            const plans = await plansRes.json();
-
-            if (!plansRes.ok) {
-                throw new Error(plans.message || "Failed to fetch plans");
-            }
-
             if (!plans || plans.length === 0) {
                 throw new Error(
-                    "No saved plan found. Please regenerate your plan."
+                    "No saved plan found. Please regenerate your plan.",
                 );
             }
 
-            // Use the most recent plan
             const latestPlan = plans[0];
-
             const res = await fetch(
                 `/api/plans/${latestPlan._id}/sync-google`,
                 {
                     method: "POST",
                     credentials: "include",
-                }
+                },
             );
-
             const data = await res.json();
 
             if (res.ok) {
@@ -336,12 +262,8 @@ export default function TrainingPlan() {
                 throw new Error(data.message || "Failed to sync to calendar");
             }
         } catch (err) {
-            setSyncMessage({
-                type: "error",
-                text: err.message,
-            });
+            setSyncMessage({ type: "error", text: err.message });
         } finally {
-            setSyncing(false);
             setTimeout(() => setSyncMessage(null), 5000);
         }
     };
@@ -498,7 +420,7 @@ export default function TrainingPlan() {
                                                     "I run 30+km/week"}
                                             </span>
                                         </button>
-                                    )
+                                    ),
                                 )}
                             </div>
                         </div>
@@ -596,7 +518,7 @@ export default function TrainingPlan() {
                                                 {dist}
                                             </span>
                                         </button>
-                                    )
+                                    ),
                                 )}
                             </div>
                         </div>
@@ -677,9 +599,9 @@ export default function TrainingPlan() {
                                                         "Peak"
                                                             ? "bg-purple-500/20 text-purple-200"
                                                             : weekData.phase ===
-                                                              "Taper"
-                                                            ? "bg-emerald-500/20 text-emerald-200"
-                                                            : "bg-white/10"
+                                                                "Taper"
+                                                              ? "bg-emerald-500/20 text-emerald-200"
+                                                              : "bg-white/10"
                                                     }`}
                                                 >
                                                     {weekData.phase} Phase
@@ -714,7 +636,7 @@ export default function TrainingPlan() {
                                                         onClick={() =>
                                                             toggleWorkout(
                                                                 weekData.weekNumber,
-                                                                i
+                                                                i,
                                                             )
                                                         }
                                                         className={`p-2 rounded-full transition-all ${

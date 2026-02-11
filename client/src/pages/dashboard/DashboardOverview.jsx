@@ -1,85 +1,56 @@
 import { Activity, Clock, Map, TrendingUp, AlertCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { getPlanStats } from "@/lib/utils";
 
+const fetchPlans = async () => {
+    const res = await fetch("/api/plans", { credentials: "include" });
+    if (res.status === 401) throw new Error("unauthorized");
+    if (!res.ok) throw new Error("Failed to fetch plans");
+    return res.json();
+};
+
 export default function DashboardOverview() {
-    const [stats, setStats] = useState({
-        totalDist: 0,
-        activeHours: "0h 0m",
-        avgPace: "0'00\" /km",
-        runsThisWeek: 0,
+    const { data: plans, isLoading } = useQuery({
+        queryKey: ["plans"],
+        queryFn: fetchPlans,
     });
-    const [hasPlan, setHasPlan] = useState(false);
-    const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const loadStats = async () => {
-            try {
-                // Fetch from API FIRST (server is the source of truth for authenticated users)
-                const res = await fetch("/api/plans", {
-                    credentials: "include",
-                });
+    const { stats, hasPlan } = useMemo(() => {
+        if (!plans || plans.length === 0) {
+            return {
+                stats: {
+                    totalDist: 0,
+                    activeHours: "0h 0m",
+                    avgPace: "0'00\" /km",
+                    runsThisWeek: 0,
+                },
+                hasPlan: false,
+            };
+        }
 
-                if (res.ok) {
-                    const plans = await res.json();
-                    if (plans.length > 0) {
-                        const serverPlan = plans[0];
-                        const schedule = serverPlan.schedule;
-
-                        // Build completedMap from server plan
-                        const completedMap = {};
-                        schedule.forEach((week) => {
-                            week.workouts.forEach((workout, i) => {
-                                if (workout.completed) {
-                                    completedMap[
-                                        `${week.weekNumber}-${i}`
-                                    ] = true;
-                                }
-                            });
-                        });
-
-                        // Update Local Storage with server data
-                        localStorage.setItem(
-                            "meterun_training_plan",
-                            JSON.stringify(schedule)
-                        );
-                        localStorage.setItem(
-                            "meterun_plan_progress",
-                            JSON.stringify(completedMap)
-                        );
-
-                        // Calculate stats from server plan
-                        const calculated = getPlanStats(schedule, completedMap);
-                        if (calculated) {
-                            setStats(calculated);
-                            setHasPlan(true);
-                        }
-                    } else {
-                        // User is authenticated but has no plans on the server
-                        // Clear any localStorage data that might be from a different user
-                        console.log(
-                            "User has no plans on server. Clearing localStorage."
-                        );
-                        localStorage.removeItem("meterun_training_plan");
-                        localStorage.removeItem("meterun_plan_progress");
-                        setHasPlan(false);
-                    }
-                } else if (res.status === 401) {
-                    // Unauthenticated - don't show any plan data
-                    localStorage.removeItem("meterun_training_plan");
-                    localStorage.removeItem("meterun_plan_progress");
-                    setHasPlan(false);
+        const schedule = plans[0].schedule;
+        const completedMap = {};
+        schedule.forEach((week) => {
+            week.workouts.forEach((workout, i) => {
+                if (workout.completed) {
+                    completedMap[`${week.weekNumber}-${i}`] = true;
                 }
-            } catch (error) {
-                console.error("Failed to load plan stats:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
+            });
+        });
 
-        loadStats();
-    }, []);
+        const calculated = getPlanStats(schedule, completedMap);
+        return {
+            stats: calculated || {
+                totalDist: 0,
+                activeHours: "0h 0m",
+                avgPace: "0'00\" /km",
+                runsThisWeek: 0,
+            },
+            hasPlan: !!calculated,
+        };
+    }, [plans]);
 
     const statItems = [
         {
@@ -108,7 +79,7 @@ export default function DashboardOverview() {
         },
     ];
 
-    if (loading) return null;
+    if (isLoading) return null;
 
     return (
         <div className="space-y-8">

@@ -10,134 +10,89 @@ import {
     ResponsiveContainer,
     Legend,
 } from "recharts";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Activity } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+
+const fetchPlans = async () => {
+    const res = await fetch("/api/plans", { credentials: "include" });
+    if (res.status === 401) throw new Error("unauthorized");
+    if (!res.ok) throw new Error("Failed to fetch plans");
+    return res.json();
+};
 
 export default function AnalyticsCharts() {
-    const [progressData, setProgressData] = useState([]);
-    const [comparisonData, setComparisonData] = useState([]);
-    const [hasPlan, setHasPlan] = useState(false);
+    const { data: plans, isLoading } = useQuery({
+        queryKey: ["plans"],
+        queryFn: fetchPlans,
+    });
 
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                let plan = null;
-                let completedMap = {};
+    const { progressData, comparisonData, hasPlan } = useMemo(() => {
+        if (!plans || plans.length === 0) {
+            return { progressData: [], comparisonData: [], hasPlan: false };
+        }
 
-                // Fetch from API FIRST (server is the source of truth)
-                const res = await fetch("/api/plans", {
-                    credentials: "include",
-                });
+        const plan = plans[0].schedule;
+        const completedMap = {};
+        plan.forEach((week) => {
+            week.workouts.forEach((workout, i) => {
+                if (workout.completed) {
+                    completedMap[`${week.weekNumber}-${i}`] = true;
+                }
+            });
+        });
 
-                if (res.ok) {
-                    const plans = await res.json();
-                    if (plans.length > 0) {
-                        const serverPlan = plans[0];
-                        plan = serverPlan.schedule;
+        const progress = [];
+        const comparison = [];
 
-                        // Rebuild completedMap from server
-                        completedMap = {};
-                        plan.forEach((week) => {
-                            week.workouts.forEach((workout, i) => {
-                                if (workout.completed) {
-                                    completedMap[
-                                        `${week.weekNumber}-${i}`
-                                    ] = true;
-                                }
-                            });
-                        });
+        plan.forEach((week) => {
+            let totalWorkouts = 0;
+            let completedWorkouts = 0;
+            let plannedDist = 0;
+            let actualDist = 0;
 
-                        // Update LS with server data
-                        localStorage.setItem(
-                            "meterun_training_plan",
-                            JSON.stringify(plan)
-                        );
-                        localStorage.setItem(
-                            "meterun_plan_progress",
-                            JSON.stringify(completedMap)
-                        );
-                    } else {
-                        // User is authenticated but has no plans on the server
-                        // Clear any localStorage data that might be from a different user
-                        console.log(
-                            "User has no plans on server. Clearing localStorage."
-                        );
-                        localStorage.removeItem("meterun_training_plan");
-                        localStorage.removeItem("meterun_plan_progress");
-                        setHasPlan(false);
-                        return; // Exit early - no plan to display
-                    }
-                } else if (res.status === 401) {
-                    // Unauthenticated - don't show any plan data
-                    localStorage.removeItem("meterun_training_plan");
-                    localStorage.removeItem("meterun_plan_progress");
-                    setHasPlan(false);
-                    return;
+            week.workouts.forEach((workout, i) => {
+                const key = `${week.weekNumber}-${i}`;
+                const isCompleted = !!completedMap[key];
+
+                if (workout.type !== "Rest") {
+                    totalWorkouts++;
+                    if (isCompleted) completedWorkouts++;
                 }
 
-                if (plan) {
-                    // Prepare Chart Data
-                    const progress = [];
-                    const comparison = [];
-
-                    plan.forEach((week) => {
-                        let totalWorkouts = 0;
-                        let completedWorkouts = 0;
-                        let plannedDist = 0;
-                        let actualDist = 0;
-
-                        week.workouts.forEach((workout, i) => {
-                            const key = `${week.weekNumber}-${i}`;
-                            const isCompleted = !!completedMap[key];
-
-                            // Progress Count
-                            if (workout.type !== "Rest") {
-                                totalWorkouts++;
-                                if (isCompleted) completedWorkouts++;
-                            }
-
-                            // Distance Calc
-                            if (
-                                workout.distance &&
-                                workout.distance.includes("km")
-                            ) {
-                                const dist = parseFloat(workout.distance) || 0;
-                                plannedDist += dist;
-                                if (isCompleted) actualDist += dist;
-                            }
-                        });
-
-                        const completionRate =
-                            totalWorkouts > 0
-                                ? Math.round(
-                                      (completedWorkouts / totalWorkouts) * 100
-                                  )
-                                : 0;
-
-                        progress.push({
-                            name: `Week ${week.weekNumber}`,
-                            progress: completionRate,
-                        });
-
-                        comparison.push({
-                            name: `Week ${week.weekNumber}`,
-                            planned: Math.round(plannedDist * 10) / 10,
-                            implemented: Math.round(actualDist * 10) / 10,
-                        });
-                    });
-
-                    setProgressData(progress);
-                    setComparisonData(comparison);
-                    setHasPlan(true);
+                if (workout.distance && workout.distance.includes("km")) {
+                    const dist = parseFloat(workout.distance) || 0;
+                    plannedDist += dist;
+                    if (isCompleted) actualDist += dist;
                 }
-            } catch (err) {
-                console.error("Error loading analytics:", err);
-            }
+            });
+
+            const completionRate =
+                totalWorkouts > 0
+                    ? Math.round((completedWorkouts / totalWorkouts) * 100)
+                    : 0;
+
+            progress.push({
+                name: `Week ${week.weekNumber}`,
+                progress: completionRate,
+            });
+
+            comparison.push({
+                name: `Week ${week.weekNumber}`,
+                planned: Math.round(plannedDist * 10) / 10,
+                implemented: Math.round(actualDist * 10) / 10,
+            });
+        });
+
+        return {
+            progressData: progress,
+            comparisonData: comparison,
+            hasPlan: true,
         };
+    }, [plans]);
 
-        loadData();
-    }, []);
+    if (isLoading) return null;
 
     if (!hasPlan) {
         return (

@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import compression from "compression";
 import cookieParser from "cookie-parser";
 import connectDB from "../server/src/config/db.js";
 import authRoutes from "../server/src/routes/authRoutes.js";
@@ -44,8 +45,9 @@ app.use(
             return callback(new Error("Not allowed by CORS"));
         },
         credentials: true,
-    })
+    }),
 );
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());

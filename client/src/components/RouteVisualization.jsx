@@ -21,6 +21,7 @@ import icon from "leaflet/dist/images/marker-icon.png";
 import iconShadow from "leaflet/dist/images/marker-shadow.png";
 import { useState, useEffect } from "react";
 import { decodePolyline } from "../lib/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 // Fix Leaflet icon issue in React
 let DefaultIcon = L.icon({
@@ -42,23 +43,45 @@ function MapUpdater({ center, zoom }) {
     return null;
 }
 
+const fetchActivities = async () => {
+    const res = await fetch("/api/activities");
+    if (!res.ok) throw new Error("Failed to fetch activities");
+    return res.json();
+};
+
 export default function RouteVisualization() {
-    const [activities, setActivities] = useState([]);
+    const queryClient = useQueryClient();
+    const { data: activities = [] } = useQuery({
+        queryKey: ["activities"],
+        queryFn: fetchActivities,
+    });
+
+    const syncMutation = useMutation({
+        mutationFn: async () => {
+            const res = await fetch("/api/activities/sync", { method: "POST" });
+            if (!res.ok) throw new Error("Sync failed");
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["activities"] });
+        },
+        onError: () => {
+            alert(
+                "Failed to sync with Strava. Please check if you are connected in the Sync menu.",
+            );
+        },
+    });
+
     const [currentActivityIndex, setCurrentActivityIndex] = useState(0);
-    const [isSyncing, setIsSyncing] = useState(false);
     const [routePath, setRoutePath] = useState([]);
     const [center, setCenter] = useState([-6.2088, 106.8456]);
 
     const currentActivity = activities[currentActivityIndex] || null;
 
     useEffect(() => {
-        fetchActivities();
-    }, []);
-
-    useEffect(() => {
         if (currentActivity && currentActivity.map?.summary_polyline) {
             const decoded = decodePolyline(
-                currentActivity.map.summary_polyline
+                currentActivity.map.summary_polyline,
             );
             setRoutePath(decoded);
             if (decoded.length > 0) {
@@ -69,39 +92,6 @@ export default function RouteVisualization() {
             setRoutePath([]);
         }
     }, [currentActivity]);
-
-    const fetchActivities = async () => {
-        try {
-            const res = await fetch("/api/activities");
-            if (res.ok) {
-                const data = await res.json();
-                setActivities(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch activities", error);
-        }
-    };
-
-    const handleSync = async () => {
-        setIsSyncing(true);
-        try {
-            const res = await fetch("/api/activities/sync", {
-                method: "POST",
-            });
-            if (res.ok) {
-                await fetchActivities();
-            } else {
-                console.error("Sync failed");
-                alert(
-                    "Failed to sync with Strava. Please check if you are connected in the Sync menu."
-                );
-            }
-        } catch (error) {
-            console.error("Sync error", error);
-        } finally {
-            setIsSyncing(false);
-        }
-    };
 
     const formatTime = (seconds) => {
         if (!seconds) return "00:00:00";
@@ -188,11 +178,11 @@ export default function RouteVisualization() {
                                 </h3>
                             </div>
                             <button
-                                onClick={handleSync}
-                                disabled={isSyncing}
+                                onClick={() => syncMutation.mutate()}
+                                disabled={syncMutation.isPending}
                                 className="text-[10px] font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2.5 py-1.5 rounded-lg hover:bg-orange-500/20 transition-all flex items-center gap-1.5 group/btn disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {isSyncing ? (
+                                {syncMutation.isPending ? (
                                     <RefreshCw
                                         size={12}
                                         className="animate-spin"
@@ -203,7 +193,9 @@ export default function RouteVisualization() {
                                         className="group-hover/btn:translate-y-0.5 transition-transform"
                                     />
                                 )}
-                                {isSyncing ? "Syncing..." : "Sync Strava"}
+                                {syncMutation.isPending
+                                    ? "Syncing..."
+                                    : "Sync Strava"}
                             </button>
                         </div>
 
@@ -221,7 +213,7 @@ export default function RouteVisualization() {
                                         <p className="text-2xl font-bold text-gray-400 tracking-tight">
                                             {currentActivity
                                                 ? formatDistance(
-                                                      currentActivity.distance
+                                                      currentActivity.distance,
                                                   )
                                                 : "0.00"}
                                         </p>
@@ -245,7 +237,7 @@ export default function RouteVisualization() {
                                         <p className="text-2xl font-bold text-gray-400 tracking-tight">
                                             {currentActivity
                                                 ? formatPace(
-                                                      currentActivity.averageSpeed
+                                                      currentActivity.averageSpeed,
                                                   )
                                                 : "--:--"}
                                         </p>
@@ -268,7 +260,7 @@ export default function RouteVisualization() {
                                     <p className="text-2xl font-bold text-gray-400 tracking-tight">
                                         {currentActivity
                                             ? formatTime(
-                                                  currentActivity.movingTime
+                                                  currentActivity.movingTime,
                                               )
                                             : "00:00:00"}
                                     </p>

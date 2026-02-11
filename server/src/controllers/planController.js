@@ -16,7 +16,7 @@ const createPlan = async (req, res) => {
             raceDate,
             level,
             currentDistance,
-            recentTime
+            recentTime,
         );
 
         // Check if user already has a plan, maybe overwrite or create new?
@@ -42,9 +42,11 @@ const createPlan = async (req, res) => {
 // @access  Private
 const getPlans = async (req, res) => {
     try {
-        const plans = await TrainingPlan.find({ user: req.user._id }).sort({
-            createdAt: -1,
-        });
+        const plans = await TrainingPlan.find({ user: req.user._id })
+            .sort({
+                createdAt: -1,
+            })
+            .lean();
         res.json(plans);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -77,7 +79,7 @@ const syncPlanToGoogle = async (req, res) => {
         const oauth2Client = new google.auth.OAuth2(
             process.env.GOOGLE_CLIENT_ID,
             process.env.GOOGLE_CLIENT_SECRET,
-            process.env.GOOGLE_REDIRECT_URI
+            process.env.GOOGLE_REDIRECT_URI,
         );
 
         oauth2Client.setCredentials({
@@ -155,14 +157,14 @@ const syncPlanToGoogle = async (req, res) => {
                 const weekOffset = (week.weekNumber - 1) * 7;
                 const dayOffset = dayOffsets[workout.day] || 0;
                 workoutDate.setDate(
-                    workoutDate.getDate() + weekOffset + dayOffset
+                    workoutDate.getDate() + weekOffset + dayOffset,
                 );
 
                 // Format date as YYYY-MM-DD for all-day events (using local timezone)
                 const year = workoutDate.getFullYear();
                 const month = String(workoutDate.getMonth() + 1).padStart(
                     2,
-                    "0"
+                    "0",
                 );
                 const day = String(workoutDate.getDate()).padStart(2, "0");
                 const dateString = `${year}-${month}-${day}`;
@@ -203,10 +205,10 @@ const syncPlanToGoogle = async (req, res) => {
                 } catch (eventError) {
                     console.error(
                         `Failed to create event for ${workout.day} Week ${week.weekNumber}:`,
-                        eventError.message
+                        eventError.message,
                     );
                     errors.push(
-                        `Week ${week.weekNumber} ${workout.day}: ${eventError.message}`
+                        `Week ${week.weekNumber} ${workout.day}: ${eventError.message}`,
                     );
                 }
             }

@@ -47,8 +47,10 @@ const activitySchema = mongoose.Schema(
     },
     {
         timestamps: true,
-    }
+    },
 );
+
+activitySchema.index({ user: 1, startDate: -1 });
 
 const Activity = mongoose.model("Activity", activitySchema);
 

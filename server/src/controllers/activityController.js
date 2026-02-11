@@ -12,7 +12,7 @@ const refreshStravaToken = async (user) => {
                 client_secret: process.env.STRAVA_CLIENT_SECRET,
                 grant_type: "refresh_token",
                 refresh_token: user.strava.refreshToken,
-            }
+            },
         );
 
         const { access_token, refresh_token, expires_at } = response.data;
@@ -54,7 +54,7 @@ const syncActivities = async (req, res) => {
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
                 },
-            }
+            },
         );
 
         const activities = response.data;
@@ -137,7 +137,7 @@ const syncActivities = async (req, res) => {
 
                         const workoutDate = new Date(referenceStartDate);
                         workoutDate.setDate(
-                            workoutDate.getDate() + weekOffset + dayOffset
+                            workoutDate.getDate() + weekOffset + dayOffset,
                         );
                         workoutDate.setHours(0, 0, 0, 0);
 
@@ -191,9 +191,11 @@ const syncActivities = async (req, res) => {
 // @access  Private
 const getActivities = async (req, res) => {
     try {
-        const activities = await Activity.find({ user: req.user._id }).sort({
-            startDate: -1,
-        });
+        const activities = await Activity.find({ user: req.user._id })
+            .sort({
+                startDate: -1,
+            })
+            .lean();
         res.json(activities);
     } catch (error) {
         res.status(500).json({ message: "Failed to fetch activities" });

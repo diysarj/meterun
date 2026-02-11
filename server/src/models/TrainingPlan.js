@@ -30,8 +30,10 @@ const trainingPlanSchema = new mongoose.Schema(
     },
     {
         timestamps: true,
-    }
+    },
 );
+
+trainingPlanSchema.index({ user: 1, createdAt: -1 });
 
 const TrainingPlan = mongoose.model("TrainingPlan", trainingPlanSchema);
 
