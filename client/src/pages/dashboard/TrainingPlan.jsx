@@ -47,6 +47,7 @@ export default function TrainingPlan() {
     const [error, setError] = useState(null);
     const [expandedWeek, setExpandedWeek] = useState(null);
     const [syncMessage, setSyncMessage] = useState(null);
+    const [syncing, setSyncing] = useState(false);
     const [showResetModal, setShowResetModal] = useState(false);
 
     // --- Queries ---
@@ -235,6 +236,7 @@ export default function TrainingPlan() {
         }
 
         setSyncMessage(null);
+        setSyncing(true);
 
         try {
             if (!plans || plans.length === 0) {
@@ -264,6 +266,7 @@ export default function TrainingPlan() {
         } catch (err) {
             setSyncMessage({ type: "error", text: err.message });
         } finally {
+            setSyncing(false);
             setTimeout(() => setSyncMessage(null), 5000);
         }
     };
