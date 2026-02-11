@@ -12,7 +12,7 @@ const authUser = async (req, res) => {
         if (mongoose.connection.readyState !== 1) {
             console.error(
                 "Database not connected. State:",
-                mongoose.connection.readyState
+                mongoose.connection.readyState,
             );
             return res.status(503).json({ message: "Database not ready" });
         }
@@ -79,30 +79,43 @@ const authUser = async (req, res) => {
 // @route   POST /api/auth/register
 // @access  Public
 const registerUser = async (req, res) => {
-    const { name, email, password } = req.body;
+    try {
+        const { name, email, password } = req.body;
 
-    const userExists = await User.findOne({ email });
+        if (!name || !email || !password) {
+            return res
+                .status(400)
+                .json({ message: "Please provide name, email, and password" });
+        }
 
-    if (userExists) {
-        res.status(400).json({ message: "User already exists" });
-        return;
-    }
+        const userExists = await User.findOne({ email });
 
-    const user = await User.create({
-        name,
-        email,
-        password,
-    });
+        if (userExists) {
+            return res.status(400).json({ message: "User already exists" });
+        }
 
-    if (user) {
-        generateToken(res, user._id);
-        res.status(201).json({
-            _id: user._id,
-            name: user.name,
-            email: user.email,
+        const user = await User.create({
+            name,
+            email,
+            password,
         });
-    } else {
-        res.status(400).json({ message: "Invalid user data" });
+
+        if (user) {
+            generateToken(res, user._id);
+            return res.status(201).json({
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+            });
+        } else {
+            return res.status(400).json({ message: "Invalid user data" });
+        }
+    } catch (error) {
+        console.error("Registration error:", error);
+        return res.status(500).json({
+            message: "Server error during registration",
+            error: error.message || "Unknown error",
+        });
     }
 };
 
@@ -136,7 +149,7 @@ const connectStrava = async (req, res) => {
                 code,
                 grant_type: "authorization_code",
                 redirect_uri: redirectUri, // Strava requires this to match the auth request
-            }
+            },
         );
 
         const { access_token, refresh_token, expires_at, athlete } =
@@ -192,7 +205,7 @@ const connectGoogle = async (req, res) => {
                 client_secret: process.env.GOOGLE_CLIENT_SECRET,
                 redirect_uri: redirectUri,
                 grant_type: "authorization_code",
-            }
+            },
         );
 
         const tokens = tokenResponse.data;
